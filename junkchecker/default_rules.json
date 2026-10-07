@@ -1,0 +1,83 @@
+{
+  "_comment": "JunkChecker rules. Copy to %APPDATA%\\JunkChecker\\rules.json to customise: profiles there are added, a profile with the same id replaces the built-in one. status: safe | unknown. Matchers (any match wins): dirs = a parent folder with exactly this name; dir_prefixes / dir_suffixes = a parent folder starting / ending with this text; names = file-name glob patterns (case-insensitive); regex = file-name regular expression; require_all = folder AND name must match. keep = keep the newest N files per group (group: 'regex' uses the 'doc' group of keep_regex, 'folder' groups by folder).",
+  "version": 1,
+  "profiles": [
+    {
+      "id": "altium",
+      "name": "Altium Designer",
+      "enabled": true,
+      "rules": [
+        {"category": "history", "status": "safe", "label": {"en": "Altium local history backup", "tr": "Altium otomatik yedeği (History)"},
+         "dirs": ["History"], "regex": "^.+\\.~\\(\\d+\\)\\.[^.]+\\.zip$",
+         "keep": {"group": "regex", "keep_regex": "^(?P<doc>.+)\\.~\\((?P<n>\\d+)\\)\\.(?P<ext>[^.]+)\\.zip$"},
+         "gitignore": ["**/History/"]},
+        {"category": "previews", "status": "safe", "label": {"en": "Altium preview cache", "tr": "Altium önizleme önbelleği"},
+         "dirs": ["__Previews"], "names": ["*.SchDocPreview", "*.PcbDocPreview"], "gitignore": ["**/__Previews/", "*.SchDocPreview", "*.PcbDocPreview"]},
+        {"category": "logs", "status": "safe", "label": {"en": "Altium log file", "tr": "Altium log dosyası"},
+         "dirs": ["Logs"], "dir_prefixes": ["Project Logs for"], "names": ["*.LOG"], "gitignore": ["**/Logs/", "Project Logs for*/"]},
+        {"category": "reports", "status": "safe", "label": {"en": "Generated check report (DRC/ERC, Status Report)", "tr": "Üretilmiş kontrol raporu (DRC/ERC, Status Report)"},
+         "names": ["Status Report.Txt"], "regex": "(?i)^.*(design rule|drc|erc|compile).*\\.html?$", "gitignore": ["*.htm"]},
+        {"category": "altium-cache", "status": "safe", "label": {"en": "Altium regenerated state file", "tr": "Altium'un yeniden ürettiği durum dosyası"},
+         "names": ["*.PrjPCBStructure", "*.PrjPcbStructure"], "gitignore": ["*.PrjPCBStructure"]},
+        {"category": "altium-outputs", "status": "unknown", "label": {"en": "Altium project outputs (may be deliverables)", "tr": "Altium proje çıktıları (teslim dosyası olabilir)"},
+         "dir_prefixes": ["Project Outputs for"]}
+      ]
+    },
+    {
+      "id": "circuitstudio",
+      "name": "CircuitStudio",
+      "enabled": true,
+      "rules": [
+        {"category": "history", "status": "safe", "label": {"en": "CircuitStudio local history backup", "tr": "CircuitStudio otomatik yedeği"},
+         "dirs": ["History"], "regex": "^.+\\.~\\(\\d+\\)\\.[^.]+\\.zip$",
+         "keep": {"group": "regex", "keep_regex": "^(?P<doc>.+)\\.~\\((?P<n>\\d+)\\)\\.(?P<ext>[^.]+)\\.zip$"}},
+        {"category": "previews", "status": "safe", "label": {"en": "CircuitStudio preview cache", "tr": "CircuitStudio önizleme önbelleği"},
+         "names": ["*.CSSchDocPreview", "*.CSPcbDocPreview"]}
+      ]
+    },
+    {
+      "id": "kicad",
+      "name": "KiCad",
+      "enabled": true,
+      "rules": [
+        {"category": "kicad-backups", "status": "safe", "label": {"en": "KiCad automatic project backup", "tr": "KiCad otomatik proje yedeği"},
+         "dir_suffixes": ["-backups"], "names": ["*.zip"], "require_all": true,
+         "keep": {"group": "folder"}, "gitignore": ["*-backups/"]},
+        {"category": "kicad-bak", "status": "safe", "label": {"en": "KiCad backup file", "tr": "KiCad yedek dosyası"},
+         "names": ["*.kicad_pcb-bak", "*.kicad_sch-bak", "*.sch-bak", "*-bak", "_autosave-*", "fp-info-cache"],
+         "gitignore": ["*-bak", "_autosave-*", "fp-info-cache"]},
+        {"category": "kicad-lock", "status": "unknown", "label": {"en": "KiCad lock file (KiCad may be open)", "tr": "KiCad kilit dosyası (KiCad açık olabilir)"},
+         "names": ["~*.lck"]}
+      ]
+    },
+    {
+      "id": "freecad",
+      "name": "FreeCAD",
+      "enabled": true,
+      "rules": [
+        {"category": "freecad-backup", "status": "safe", "label": {"en": "FreeCAD backup file", "tr": "FreeCAD yedek dosyası"},
+         "names": ["*.FCBak", "*.FCStd1"], "gitignore": ["*.FCBak", "*.FCStd1"]}
+      ]
+    },
+    {
+      "id": "office",
+      "name": "Office / LibreOffice",
+      "enabled": true,
+      "rules": [
+        {"category": "office-temp", "status": "safe", "label": {"en": "Office temporary / lock file", "tr": "Office geçici / kilit dosyası"},
+         "names": ["~$*", ".~lock.*#"], "gitignore": ["~$*", ".~lock.*#"]}
+      ]
+    },
+    {
+      "id": "generic",
+      "name": "Generic backups & OS junk",
+      "enabled": true,
+      "rules": [
+        {"category": "backup", "status": "safe", "label": {"en": "Editor/tool backup (.bak, .orig, .tmp, ~)", "tr": "Editör/araç yedeği (.bak, .orig, .tmp, ~)"},
+         "names": ["*.bak", "*.orig", "*.tmp", "*~"], "gitignore": ["*.bak", "*.orig", "*.tmp", "*~"]},
+        {"category": "os-junk", "status": "safe", "label": {"en": "Operating-system junk (Thumbs.db, desktop.ini)", "tr": "İşletim sistemi çöpü (Thumbs.db, desktop.ini)"},
+         "names": ["Thumbs.db", "ehthumbs.db", "desktop.ini", ".DS_Store"], "gitignore": ["Thumbs.db", "desktop.ini", ".DS_Store"]}
+      ]
+    }
+  ]
+}
