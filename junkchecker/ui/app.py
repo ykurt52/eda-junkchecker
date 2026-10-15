@@ -13,10 +13,43 @@ from .treemap import Treemap
 
 DEFAULT_ROOT = "C:\\"
 STATUSES = (SAFE, UNKNOWN, KEEP)
+ASSETS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
 
 
 def _ts(t, fmt="%Y-%m-%d %H:%M"):
     return datetime.datetime.fromtimestamp(t).strftime(fmt)
+
+
+def _check_images(master, C):
+    """Checkbox images for the tree rows: off, on, partly on, and disabled (kept files)."""
+    try:
+        scale = float(master.tk.call("tk", "scaling")) / (96 / 72)
+    except tk.TclError:
+        scale = 1.0
+    s = max(14, round(15 * scale)) | 1
+    lw = 2 if s >= 19 else 1
+
+    def box(border, fill):
+        img = tk.PhotoImage(master=master, width=s + max(4, s // 3), height=s)   # transparent gap before the text
+        img.put(border, to=(1, 1, s - 1, s - 1))
+        img.put(fill, to=(1 + lw, 1 + lw, s - 1 - lw, s - 1 - lw))
+        return img
+
+    def line(img, pts, color, w):
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            n = int(max(abs(x1 - x0), abs(y1 - y0)) * 2) or 1
+            for i in range(n + 1):
+                x, y = x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n
+                img.put(color, to=(int(x), int(y), int(x) + w, int(y) + w))
+
+    off = box(theme.blend(C["border"], C["text"], 0.45), C["surface"])
+    on = box(C["accent"], C["accent"])
+    line(on, [(s * 0.24, s * 0.50), (s * 0.42, s * 0.68), (s * 0.74, s * 0.30)], C["on_accent"], lw + 1)
+    part = box(C["accent"], C["surface"])
+    m = s // 2
+    part.put(C["accent"], to=(round(s * 0.28), m - lw, s - round(s * 0.28), m + lw))
+    dis = box(C["border"], C["hover"])
+    return {"off": off, "on": on, "part": part, "dis": dis}
 
 
 class App(tk.Tk):
@@ -26,6 +59,7 @@ class App(tk.Tk):
         self.lang = self.settings.get("lang") or default_lang()
         self.log = storage.get_logger()
         self.title(f"{APP} {__version__}")
+        self._set_icon()
         self.geometry("1240x780")
         self.minsize(980, 600)
         self.q = queue.Queue()
@@ -33,6 +67,7 @@ class App(tk.Tk):
         self.is_busy = False
         self.hits, self.scanned_root, self.keep_used, self.node_files = [], None, 3, {}
         self.dupe_groups, self.dupe_root, self.dupe_nodes = [], None, {}
+        self.checked, self.dchecked = set(), set()   # paths ticked in the Junk and Duplicates trees
         self.eda_tools = set()
         self.rules = load_rules(storage.USER_RULES, self.settings["disabled_profiles"])
         last = self.settings.get("last_root")
@@ -90,6 +125,18 @@ class App(tk.Tk):
         self.remember(self.root_dir.get())
         self.destroy()
 
+    def _set_icon(self):
+        try:
+            ico = os.path.join(ASSETS, "icon.ico")
+            if os.name == "nt" and os.path.isfile(ico):
+                self.iconbitmap(default=ico)   # also used by every dialog
+            else:
+                self._icons = [tk.PhotoImage(master=self, file=os.path.join(ASSETS, f"icon-{n}.png"))
+                               for n in (256, 48, 32, 16)]
+                self.iconphoto(True, *self._icons)
+        except (tk.TclError, OSError):
+            pass
+
     # ---------------------------------------------------------------- build / theme
     def rebuild(self):
         for w in self.winfo_children():
@@ -102,6 +149,7 @@ class App(tk.Tk):
 
     def _build(self):
         C = self.C
+        self.cimg = _check_images(self, C)
         # header
         head = tk.Frame(self, bg=C["head"], height=58)
         head.pack(fill="x")
@@ -189,6 +237,62 @@ class App(tk.Tk):
         ys.pack(side="right", fill="y")
         return tree
 
+    # ---------------------------------------------------------------- checkboxes
+    # Ticking a row is separate from highlighting it: only ticked files are cleaned.
+    # Click a box (or press Space on the highlighted rows) to tick / untick.
+    def _bind_checks(self, tree, toggle, open_fn):
+        def on_click(e):
+            iid = tree.identify_row(e.y)
+            if iid and "image" in tree.identify_element(e.x, e.y):
+                toggle([iid])
+                return "break"   # do not move the highlight when only ticking
+
+        def on_double(e):
+            if "image" not in tree.identify_element(e.x, e.y):
+                open_fn()
+
+        def on_space(e):
+            if tree.selection():
+                toggle(list(tree.selection()))
+            return "break"
+        tree.bind("<Button-1>", on_click)
+        tree.bind("<Double-1>", on_double)
+        tree.bind("<space>", on_space)
+
+    @staticmethod
+    def _affected(tree, iids):
+        """The toggled rows, everything below them and every folder above them."""
+        out = set()
+
+        def down(i):
+            out.add(i)
+            for k in tree.get_children(i):
+                down(k)
+        for iid in iids:
+            down(iid)
+            p = tree.parent(iid)
+            while p:
+                out.add(p)
+                p = tree.parent(p)
+        return out
+
+    def _paint(self, tree, iids, eligible, checked):
+        for iid in iids:
+            paths = eligible(iid)
+            n = sum(p in checked for p in paths)
+            st = "dis" if not paths else ("off" if n == 0 else "on" if n == len(paths) else "part")
+            tree.item(iid, image=self.cimg[st])
+
+    def _toggle(self, tree, iids, eligible, checked):
+        paths = {p for iid in iids for p in eligible(iid)}
+        if not paths:
+            return
+        if paths <= checked:
+            checked.difference_update(paths)
+        else:
+            checked.update(paths)
+        self._paint(tree, self._affected(tree, iids), eligible, checked)
+
     def _tiles(self, parent, keys, colors):
         C = self.C
         frame = ttk.Frame(parent)
@@ -232,13 +336,12 @@ class App(tk.Tk):
         self.tiles = self._tiles(f, STATUSES, [self.C[s] for s in STATUSES])
         self.tree = self._tree(f, (("#0", 420, "w", True), ("status", 150, "w", False), ("size", 90, "e", False),
                                    ("count", 60, "e", False), ("reason", 330, "w", True), ("mtime", 130, "w", False)))
-        self.tree.bind("<<TreeviewSelect>>", lambda e: self.update_sel())
-        self.tree.bind("<Double-1>", lambda e: self.open_location())
+        self._bind_checks(self.tree, self.toggle_junk, self.open_location)
         self.tree.bind("<Button-3>", self.tree_menu)
         act = ttk.Frame(f)
         act.pack(fill="x", pady=(12, 0))
         self.b_selsafe = ttk.Button(act, style="Ghost.TButton", command=self.select_safe)
-        self.b_clear = ttk.Button(act, style="Ghost.TButton", command=lambda: self.tree.selection_remove(self.tree.selection()))
+        self.b_clear = ttk.Button(act, style="Ghost.TButton", command=self.uncheck_all)
         self.b_open = ttk.Button(act, style="Ghost.TButton", command=self.open_location)
         self.b_export = ttk.Button(act, style="Ghost.TButton", command=self.export_report)
         self.b_git = ttk.Button(act, style="Ghost.TButton", command=self.git_helper)
@@ -263,8 +366,7 @@ class App(tk.Tk):
         self.l_dhint.pack(side="right")
         self.dtree = self._tree(f, (("#0", 560, "w", True), ("copies", 80, "e", False), ("size", 100, "e", False),
                                     ("wasted", 100, "e", False), ("mtime", 140, "w", False)))
-        self.dtree.bind("<<TreeviewSelect>>", lambda e: self.update_dsel())
-        self.dtree.bind("<Double-1>", lambda e: self.open_dupe())
+        self._bind_checks(self.dtree, self.toggle_dupes, self.open_dupe)
         act = ttk.Frame(f)
         act.pack(fill="x", pady=(12, 0))
         self.b_dsel = ttk.Button(act, style="Ghost.TButton", command=self.select_copies)
@@ -587,25 +689,33 @@ class App(tk.Tk):
         for top in tree.get_children(""):
             sort_kids(top)
         self.dirs = dirs
+        self.checked &= {h["path"] for h in self.hits if h["status"] != KEEP}
+        self._paint(tree, self.node_files, self._junk_eligible, self.checked)
+        self.update_sel()
+
+    def _junk_eligible(self, iid):
+        return [h["path"] for h in self.node_files.get(iid, []) if h["status"] != KEEP]
+
+    def toggle_junk(self, iids):
+        self._toggle(self.tree, iids, self._junk_eligible, self.checked)
+        self.update_sel()
+
+    def uncheck_all(self):
+        self.checked.clear()
+        self._paint(self.tree, self.node_files, self._junk_eligible, self.checked)
         self.update_sel()
 
     def selected_files(self):
-        seen, out = set(), []
-        for iid in self.tree.selection():
-            for h in self.node_files.get(iid, []):
-                if h["path"] not in seen:
-                    seen.add(h["path"])
-                    out.append(h)
-        return out
+        """Ticked files (also those hidden by the current view filter); kept files never count."""
+        return [h for h in self.hits if h["path"] in self.checked and h["status"] != KEEP]
 
     def update_sel(self):
-        files = [f for f in self.selected_files() if f["status"] != KEEP]
+        files = self.selected_files()
         self.l_sel.config(text=self.t("selected", n=len(files), size=core.human(sum(f["size"] for f in files))) if files else "")
 
     def select_safe(self):
-        items = [iid for iid, fs in self.node_files.items()
-                 if iid not in getattr(self, "dirs", ()) and fs and fs[0]["status"] == SAFE]
-        self.tree.selection_set(items)
+        self.checked.update(h["path"] for h in self.hits if h["status"] == SAFE)
+        self._paint(self.tree, self.node_files, self._junk_eligible, self.checked)
         self.update_sel()
 
     def _explore(self, files, is_file):
@@ -633,6 +743,12 @@ class App(tk.Tk):
             return
         folder = os.path.commonpath([os.path.dirname(h["path"]) for h in fs]) if iid in self.dirs else os.path.dirname(fs[0]["path"])
         m = tk.Menu(self, tearoff=0)
+        rows = list(self.tree.selection())
+        paths = {p for i in rows for p in self._junk_eligible(i)}
+        if paths:
+            m.add_command(label=self.t("uncheck") if paths <= self.checked else self.t("check"),
+                          command=lambda: self.toggle_junk(rows))
+            m.add_separator()
         m.add_command(label=self.t("open"), command=self.open_location)
         m.add_command(label=f"{self.t('exclude_this')}: {folder}", command=lambda: self.exclude_folder(folder))
         m.tk_popup(e.x_root, e.y_root)
@@ -808,31 +924,36 @@ class App(tk.Tk):
                 iid = t.insert(parent, "end", text=p, values=("", core.human(grp["size"]), "", _ts(m)),
                                tags=(KEEP if pi == 0 else UNKNOWN,))
                 self.dupe_nodes[iid] = ("file", gi, pi)
+        self.dchecked &= {p for grp in g for p in grp["paths"]}
+        self._paint(t, self.dupe_nodes, self._dupe_eligible, self.dchecked)
+        self.update_dsel()
+
+    def _dupe_eligible(self, iid):
+        """A group row ticks its copies only (the oldest file stays); a file row ticks itself."""
+        n = self.dupe_nodes.get(iid)
+        if not n:
+            return []
+        paths = self.dupe_groups[n[1]]["paths"]
+        return paths[1:] if n[0] == "group" else [paths[n[2]]]
+
+    def toggle_dupes(self, iids):
+        self._toggle(self.dtree, iids, self._dupe_eligible, self.dchecked)
         self.update_dsel()
 
     def selected_dupes(self):
-        out, seen = [], set()
-        for iid in self.dtree.selection():
-            n = self.dupe_nodes.get(iid)
-            if not n or n[0] != "file":
-                continue
-            grp = self.dupe_groups[n[1]]
-            p = grp["paths"][n[2]]
-            if p not in seen:
-                seen.add(p)
-                out.append(dict(path=p, size=grp["size"], status=UNKNOWN, group=n[1]))
-        return out
+        return [dict(path=p, size=grp["size"], status=UNKNOWN, group=gi)
+                for gi, grp in enumerate(self.dupe_groups) for p in grp["paths"] if p in self.dchecked]
 
     def update_dsel(self):
         f = self.selected_dupes()
         self.l_dsel.config(text=self.t("selected", n=len(f), size=core.human(sum(x["size"] for x in f))) if f else "")
 
     def select_copies(self):
-        items = [iid for iid, n in self.dupe_nodes.items() if n[0] == "file" and n[2] > 0]
         for iid, n in self.dupe_nodes.items():
             if n[0] == "group":
                 self.dtree.item(iid, open=True)
-        self.dtree.selection_set(items)
+        self.dchecked.update(p for grp in self.dupe_groups for p in grp["paths"][1:])
+        self._paint(self.dtree, self.dupe_nodes, self._dupe_eligible, self.dchecked)
         self.update_dsel()
 
     def open_dupe(self):
@@ -882,6 +1003,7 @@ class App(tk.Tk):
 
 
 def run(folder=None):
+    pw.set_app_id(f"GMT.{APP}")   # own taskbar icon instead of pythonw's
     app = App(folder)
     app.mainloop()
     return 0

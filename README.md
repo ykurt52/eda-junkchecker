@@ -3,6 +3,13 @@
 Find and clean junk files in EDA / CAD project folders: Altium Designer, CircuitStudio, KiCad and FreeCAD, plus Office temp files and OS junk.
 Pure Python 3 + tkinter. No third-party packages are needed to run it.
 
+## Quick start
+
+1. Download **`JunkChecker.exe`** from the [latest release](https://github.com/ykurt52/eda-junkchecker/releases/latest).
+2. Double-click it. Nothing needs to be installed and you do not need this repository: Python is built into the exe.
+
+> The exe is not code-signed. On first start Windows SmartScreen may show "Windows protected your PC": click **More info → Run anyway**.
+
 ![Junk tab](docs/junk-light.png)
 
 | Duplicates | Overview (dark theme) |
@@ -20,6 +27,7 @@ Pure Python 3 + tkinter. No third-party packages are needed to run it.
 - **Open-project protection**:
   - A warning appears while Altium, KiCad, CircuitStudio or FreeCAD is running.
   - Backups of a project whose files are locked are kept.
+- **Checkbox selection**: tick files or whole folders in the results; only ticked files are cleaned. Folders show a partly-ticked state.
 - **Clean actions**:
   - Move to the Recycle Bin.
   - Move to an archive folder.
@@ -39,9 +47,9 @@ Pure Python 3 + tkinter. No third-party packages are needed to run it.
   - Scan cache per folder.
   - A log of every scan and clean.
 
-## Run
+## Run from source
 
-Requires Python 3.9 or newer on Windows.
+For development. Requires Python 3.9 or newer on Windows.
 
 ```bat
 JunkChecker.bat                        :: or double-click JunkChecker.pyw
@@ -84,7 +92,7 @@ pip install pyinstaller
 tools\build_exe.bat          :: -> dist\JunkChecker.exe
 ```
 
-GitHub Actions runs the tests on every push. When you push a `v*` tag, it builds the exe and attaches it to a release.
+To publish a release, push a `v*` tag (for example `git tag v1.0.1` then `git push origin v1.0.1`). GitHub Actions runs the tests, builds the exe and attaches it to the release. The exe is not committed to the repository.
 
 ## Rules
 

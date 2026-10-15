@@ -9,6 +9,14 @@ EDA_PROCESSES = {"x2.exe": "Altium Designer", "circuitstudio.exe": "CircuitStudi
                  "kicad.exe": "KiCad", "pcbnew.exe": "KiCad", "eeschema.exe": "KiCad", "freecad.exe": "FreeCAD"}
 
 
+def set_app_id(app_id):
+    """Give the process its own taskbar identity so Windows shows the app icon, not python's."""
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(str(app_id))
+    except Exception:
+        pass
+
+
 def running_eda_tools():
     """Return the set of EDA tool names currently running."""
     try:
